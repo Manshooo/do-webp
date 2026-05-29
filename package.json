@@ -1,8 +1,10 @@
 {
 	"name": "do-webp",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "Convert images to WebP via npx do-webp",
-	"bin": "./bin/do-webp.js",
+	"bin": {
+		"do-webp": "./bin/do-webp.js"
+	},
 	"dependencies": {
 		"commander": "^11.1.0",
 		"sharp": "^0.33.5"
