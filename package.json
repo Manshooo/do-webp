@@ -1,7 +1,8 @@
 {
 	"name": "do-webp",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "Convert images to WebP via npx do-webp",
+	"repository": "manshooo/do-webp",
 	"bin": {
 		"do-webp": "./bin/do-webp.js"
 	},
