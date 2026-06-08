@@ -86,7 +86,6 @@ async function main() {
 				console.error(`error: Неподдерживаемый формат: ${sourcePath}`);
 				process.exit(1);
 			}
-			baseDir = path.dirname(sourcePath);
 			filesToProcess.push({
 				fullPath: sourcePath,
 				relative: path.basename(sourcePath),
