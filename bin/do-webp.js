@@ -23,7 +23,6 @@ const options = program.opts();
 if (!options.source) {
 	console.error("error: Укажите исходную папку или файл: -s ./images");
 	program.help();
-	process.exit(1);
 }
 
 const sourcePath = path.resolve(options.source);
@@ -36,7 +35,7 @@ if (!fs.existsSync(sourcePath)) {
 	process.exit(1);
 }
 
-const supportedExt = [".jpg", ".jpeg", ".png", ".tiff", ".bmp"];
+const supportedExt = [".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".svg"];
 
 async function convertFile(filePath, outPath) {
 	try {
