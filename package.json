@@ -1,6 +1,6 @@
 {
 	"name": "do-webp",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Convert images to WebP via npx do-webp",
 	"repository": "manshooo/do-webp",
 	"bin": {
