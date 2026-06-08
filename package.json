@@ -1,6 +1,6 @@
 {
 	"name": "do-webp",
-	"version": "1.2.2",
+	"version": "1.2.4",
 	"description": "Convert images to WebP via npx do-webp",
 	"repository": {
 		"type": "git",
@@ -11,6 +11,9 @@
 	},
 	"scripts": {
 		"test": "node --test test/**/*.test.js"
+	},
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org/"
 	},
 	"dependencies": {
 		"commander": "^11.1.0",
