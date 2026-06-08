@@ -1,10 +1,13 @@
 {
 	"name": "do-webp",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "Convert images to WebP via npx do-webp",
-	"repository": "manshooo/do-webp",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/manshooo/do-webp.git"
+	},
 	"bin": {
-		"do-webp": "./bin/do-webp.js"
+		"do-webp": "bin/do-webp.js"
 	},
 	"dependencies": {
 		"commander": "^11.1.0",

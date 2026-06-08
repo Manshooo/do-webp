@@ -2,14 +2,7 @@
 
 import sharp from "sharp";
 import { promises as fs } from "fs";
-import {
-	join,
-	extname,
-	relative as _relative,
-	resolve,
-	dirname,
-	basename,
-} from "path";
+import path from "path";
 import { program } from "commander";
 
 program
@@ -47,17 +40,17 @@ async function getFiles(dir, baseDir, recursive) {
 	const entries = await fs.readdir(dir, { withFileTypes: true });
 
 	for (const entry of entries) {
-		const fullPath = join(dir, entry.name);
+		const fullPath = path.join(dir, entry.name);
 
 		if (entry.isDirectory() && recursive) {
 			const subFiles = await getFiles(fullPath, baseDir, recursive);
 			results = results.concat(subFiles);
 		} else if (entry.isFile()) {
-			const ext = extname(entry.name).toLowerCase();
+			const ext = path.extname(entry.name).toLowerCase();
 			if (SUPPORTED_EXT.has(ext)) {
 				results.push({
 					fullPath,
-					relative: _relative(baseDir, fullPath),
+					relative: path.relative(baseDir, fullPath),
 					name: entry.name,
 					ext,
 				});
@@ -79,26 +72,25 @@ async function pool(workers, queue, fn) {
 }
 
 async function main() {
-	const sourcePath = resolve(options.source);
-	const distPath = options.dist ? resolve(options.dist) : null;
+	const sourcePath = path.resolve(options.source);
+	const distPath = options.dist ? path.resolve(options.dist) : null;
 	const quality = Math.min(100, Math.max(0, options.quality));
 
 	try {
 		const stat = await fs.stat(sourcePath);
 		let filesToProcess = [];
-		let baseDir = sourcePath;
 
 		if (stat.isFile()) {
-			const ext = extname(sourcePath).toLowerCase();
+			const ext = path.extname(sourcePath).toLowerCase();
 			if (!SUPPORTED_EXT.has(ext)) {
 				console.error(`error: Неподдерживаемый формат: ${sourcePath}`);
 				process.exit(1);
 			}
-			baseDir = dirname(sourcePath);
+			baseDir = path.dirname(sourcePath);
 			filesToProcess.push({
 				fullPath: sourcePath,
-				relative: basename(sourcePath),
-				name: basename(sourcePath),
+				relative: path.basename(sourcePath),
+				name: path.basename(sourcePath),
 				ext,
 			});
 		} else if (stat.isDirectory()) {
@@ -109,35 +101,53 @@ async function main() {
 			);
 		}
 
-		console.log(`Найдено файлов для обработки: ${filesToProcess.length}`);
+		const totalFiles = filesToProcess.length;
+		console.log(`Найдено файлов для обработки: ${totalFiles}`);
+
+		let successCount = 0;
 
 		// Обработка очереди с ограничением параллелизма
 		await pool(options.concurrency, filesToProcess, async (file) => {
-			const outName = basename(file.name, file.ext) + ".webp";
+			const outName = path.basename(file.name, file.ext) + ".webp";
 			let outPath;
 
 			if (distPath) {
-				const relativeDir = dirname(file.relative);
-				const targetDir = join(distPath, relativeDir);
+				const relativeDir = path.dirname(file.relative);
+				const targetDir = path.join(distPath, relativeDir);
 				await fs.mkdir(targetDir, { recursive: true });
-				outPath = join(targetDir, outName);
+				outPath = path.join(targetDir, outName);
 			} else {
-				outPath = join(dirname(file.fullPath), outName);
+				outPath = path.join(path.dirname(file.fullPath), outName);
 			}
 
 			try {
 				await sharp(file.fullPath).webp({ quality }).toFile(outPath);
-				console.log(
-					`success: ${file.relative} -> ${distPath ? _relative(distPath, outPath) : outName}`,
-				);
+
+				successCount++;
+
+				if (successCount <= 3) {
+					console.log(
+						`success: ${file.relative} -> ${distPath ? path.relative(distPath, outPath) : outName}`,
+					);
+				} else {
+					process.stdout.write(
+						`\r...и еще ${successCount - 3} файлов успешно обработано`,
+					);
+				}
 			} catch (err) {
+				process.stdout.write("\n");
 				console.error(
 					`error: Ошибка конвертации ${file.fullPath}: ${err.message}`,
 				);
 			}
 		});
 
-		console.log("Обработка успешно завершена!");
+		if (successCount > 3) {
+			process.stdout.write("\n");
+		}
+		console.log(
+			`Обработка завершена! Всего успешно конвертировано: ${successCount} из ${totalFiles}`,
+		);
 	} catch (err) {
 		if (err.code === "ENOENT") {
 			console.error(`error: Путь не существует: ${sourcePath}`);
