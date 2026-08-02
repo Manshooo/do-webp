@@ -1,6 +1,6 @@
 {
 	"name": "do-webp",
-	"version": "1.3.0",
+	"version": "2.0.0",
 	"description": "Convert images to WebP via npx do-webp",
 	"type": "module",
 	"repository": {
@@ -8,25 +8,33 @@
 		"url": "git+https://github.com/manshooo/do-webp.git"
 	},
 	"bin": {
-		"do-webp": "bin/do-webp.js"
+		"do-webp": "dist/cli.js"
 	},
 	"files": [
-		"bin",
+		"dist",
 		"README.md",
 		"LICENSE"
 	],
 	"engines": {
-		"node": ">=18.17.0"
+		"node": ">=22.12.0"
 	},
 	"scripts": {
-		"test": "node --test \"test/**/*.test.js\""
+		"build": "tsc",
+		"typecheck": "tsc --project tsconfig.test.json",
+		"test": "npm run typecheck && npm run build && node --test \"test/**/*.test.ts\"",
+		"prepublishOnly": "npm run build"
 	},
 	"publishConfig": {
-		"registry": "https://registry.npmjs.org/"
+		"registry": "https://registry.npmjs.org/",
+		"access": "public"
 	},
 	"dependencies": {
-		"commander": "^11.1.0",
-		"sharp": "^0.33.5"
+		"commander": "^15.0.0",
+		"sharp": "^0.35.3"
+	},
+	"devDependencies": {
+		"@types/node": "^24.13.3",
+		"typescript": "^7.0.2"
 	},
 	"keywords": [
 		"webp",

@@ -1,0 +1,101 @@
+# Единственный способ выпустить версию. Запускается руками из вкладки Actions,
+# сам поднимает версию в package.json, ставит тег и публикует в npm — поэтому
+# рассинхрон тега и package.json, из-за которого раньше падал деплой,
+# здесь невозможен в принципе.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Какую часть версии поднять"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+      version:
+        description: "Точная версия, например 2.0.0. Если заполнено, поле выше игнорируется"
+        required: false
+        type: string
+
+permissions:
+  contents: write # запушить коммит с версией, тег и релиз
+  id-token: write # OIDC для доверенной публикации в npm
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      # Доверенная публикация (Trusted Publishing) работает с npm 11.5.1+.
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Значения из inputs передаём через env, а не подставляем в текст скрипта:
+      # так их содержимое не может выполниться как команда.
+      - name: Bump version
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          target="${EXACT:-$BUMP}"
+
+          if [ "$target" = "none" ]; then
+            # Версия уже проставлена в package.json руками — только ставим тег.
+            tag="v$(node -p "require('./package.json').version")"
+            git tag -a "$tag" -m "$tag"
+          else
+            tag="$(npm version "$target" -m "v%s")"
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Выпускаем $tag"
+
+      - name: Check version is not published yet
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version > /dev/null 2>&1; then
+            echo "Версия $version уже опубликована в npm."
+            echo "Выберите другой bump или укажите точную версию."
+            exit 1
+          fi
+
+      # Ветку и тег пушим по отдельности: при bump = none нового коммита нет,
+      # и полагаться на то, какие теги подхватит --follow-tags, не хочется.
+      - name: Push commit and tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git push origin HEAD
+          git push origin "$TAG"
+
+      # Токен не нужен: авторизация идёт по OIDC через доверенного издателя,
+      # настроенного на npmjs.com. npm сам приложит provenance к релизу.
+      - name: Publish to npm
+        run: npm publish
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ steps.bump.outputs.tag }}" --generate-notes

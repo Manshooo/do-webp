@@ -1,0 +1,10 @@
+// Отдельный конфиг только для проверки типов: тесты не собираются, они
+// запускаются как .ts напрямую вырезкой типов в node.
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "."
+	},
+	"include": ["src", "test"]
+}

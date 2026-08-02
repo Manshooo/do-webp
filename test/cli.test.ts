@@ -1,112 +1,24 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 
-const tmpDir = path.resolve("./tmp-test");
-const cliPath = path.resolve("./bin/do-webp.js");
+import {
+	exists,
+	makeTmpDir,
+	PNG_1X1,
+	readMeta,
+	removeTmpDir,
+	runCli,
+	tmpDir,
+	writePng,
+	writeSvg,
+	writeViewBoxSvg,
+} from "./helpers.ts";
 
-/** Минимальный валидный PNG 1x1, прозрачный. */
-const PNG_1X1 = Buffer.from(
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-	"base64",
-);
-
-/**
- * Запускает CLI и возвращает код выхода вместе с выводом.
- * spawnSync вместо execSync, потому что нам нужно проверять ненулевые коды,
- * а не ловить исключение.
- *
- * @param {string[]} args
- * @returns {{ status: number, stdout: string, stderr: string }}
- */
-function runCli(args) {
-	const result = spawnSync(process.execPath, [cliPath, ...args], {
-		encoding: "utf8",
-	});
-	return {
-		status: result.status,
-		stdout: result.stdout ?? "",
-		stderr: result.stderr ?? "",
-	};
-}
-
-/**
- * Пишет PNG заданного размера во временную папку.
- *
- * @param {string} name
- * @param {number} width
- * @param {number} height
- * @returns {Promise<string>} Путь к созданному файлу.
- */
-async function writePng(name, width = 100, height = 100) {
-	const filePath = path.join(tmpDir, name);
-	await sharp({
-		create: {
-			width,
-			height,
-			channels: 3,
-			background: { r: 200, g: 40, b: 40 },
-		},
-	})
-		.png()
-		.toFile(filePath);
-	return filePath;
-}
-
-/**
- * Пишет SVG фиксированного размера — как favicon из реального проекта.
- *
- * @param {string} name
- * @param {number} size
- * @returns {Promise<string>} Путь к созданному файлу.
- */
-async function writeSvg(name, size = 800) {
-	const filePath = path.join(tmpDir, name);
-	const svg =
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-		`<circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 10}" fill="#e02020"/>` +
-		`</svg>`;
-	await fs.writeFile(filePath, svg);
-	return filePath;
-}
-
-/**
- * @param {string} filePath
- * @returns {Promise<boolean>}
- */
-function exists(filePath) {
-	return fs
-		.stat(filePath)
-		.then(() => true)
-		.catch(() => false);
-}
-
-/**
- * Читает метаданные через буфер, а не по пути. Если отдать sharp путь,
- * на Windows файл остаётся заблокированным и afterEach падает с EBUSY.
- *
- * @param {string} filePath
- * @returns {Promise<import("sharp").Metadata>}
- */
-async function readMeta(filePath) {
-	return sharp(await fs.readFile(filePath)).metadata();
-}
-
-beforeEach(async () => {
-	await fs.mkdir(tmpDir, { recursive: true });
-});
-
-afterEach(async () => {
-	await fs.rm(tmpDir, {
-		recursive: true,
-		force: true,
-		maxRetries: 5,
-		retryDelay: 100,
-	});
-});
+beforeEach(makeTmpDir);
+afterEach(removeTmpDir);
 
 test("Успешно конвертирует одиночный файл", async () => {
 	const sourceFile = path.join(tmpDir, "test.png");
@@ -204,6 +116,22 @@ test("--fit cover обрезает до точного размера", async ()
 	assert.strictEqual(meta.height, 100);
 });
 
+test("--fit отвергает неизвестный режим", async () => {
+	const sourceFile = await writePng("fit.png");
+
+	const { status, stderr } = runCli([
+		"-s",
+		sourceFile,
+		"--width",
+		"50",
+		"--fit",
+		"squeeze",
+	]);
+
+	assert.notStrictEqual(status, 0);
+	assert.match(stderr, /--fit ожидает одно из значений/);
+});
+
 test("--scale считает размер в процентах", async () => {
 	const sourceFile = await writePng("scaled.png", 400, 200);
 
@@ -214,8 +142,8 @@ test("--scale считает размер в процентах", async () => {
 	assert.strictEqual(meta.width, 200);
 	assert.strictEqual(meta.height, 100);
 
-	const double = runCli(["-s", sourceFile, "--scale", "150%"]);
-	assert.strictEqual(double.status, 0, `CLI упал: ${double.stderr}`);
+	const bigger = runCli(["-s", sourceFile, "--scale", "150%"]);
+	assert.strictEqual(bigger.status, 0, `CLI упал: ${bigger.stderr}`);
 
 	meta = await readMeta(path.join(tmpDir, "scaled.webp"));
 	assert.strictEqual(meta.width, 600);
@@ -256,10 +184,9 @@ test("SVG растеризуется в нужный размер, а не ув�
 	assert.strictEqual(meta.width, 1600);
 	assert.strictEqual(meta.height, 1600);
 
-	// Если бы SVG сначала отрисовали в его 800x800, а потом растянули, край
-	// круга размылся бы примерно вдвое. Сравниваем с таким двухшаговым
-	// вариантом: у нас полупрозрачных пикселей на границе должно быть заметно
-	// меньше.
+	// Если бы SVG сначала отрисовали в его 800x800, а потом растянули, кромка
+	// круга размылась бы примерно вдвое. Сравниваем с таким двухшаговым
+	// вариантом: у нас полупрозрачных пикселей должно быть заметно меньше.
 	const raster800 = await sharp(await fs.readFile(sourceFile)).png().toBuffer();
 	const twoStep = await sharp(raster800)
 		.resize({ width: 1600 })
@@ -278,17 +205,38 @@ test("SVG растеризуется в нужный размер, а не ув�
 	);
 });
 
-/**
- * Считает полупрозрачные пиксели — чем их больше, тем шире размытая кромка.
- *
- * @param {{ data: Buffer, info: { width: number, height: number, channels: number } }} image
- * @returns {number}
- */
-function countSoftPixels({ data, info }) {
+test("SVG с одним viewBox без размера конвертируется как есть", async () => {
+	const sourceFile = await writeViewBoxSvg("favicon.svg", 64);
+
+	// Так выглядела исходная жалоба: иконка кажется большой в браузере,
+	// но растеризуется в 64x64 и выглядит пиксельной при любом качестве.
+	const asIs = runCli(["-s", sourceFile, "-q", "100"]);
+	assert.strictEqual(asIs.status, 0, `CLI упал: ${asIs.stderr}`);
+
+	let meta = await readMeta(path.join(tmpDir, "favicon.webp"));
+	assert.strictEqual(meta.width, 64);
+
+	// И лечится указанием размера.
+	const resized = runCli(["-s", sourceFile, "--width", "512", "--lossless"]);
+	assert.strictEqual(resized.status, 0, `CLI упал: ${resized.stderr}`);
+
+	meta = await readMeta(path.join(tmpDir, "favicon.webp"));
+	assert.strictEqual(meta.width, 512);
+	assert.strictEqual(meta.height, 512);
+});
+
+/** Считает полупрозрачные пиксели — чем их больше, тем шире размытая кромка. */
+function countSoftPixels({
+	data,
+	info,
+}: {
+	data: Buffer;
+	info: { width: number; height: number; channels: number };
+}): number {
 	let count = 0;
 
 	for (let i = 0; i < info.width * info.height; i++) {
-		const alpha = data[i * info.channels + 3];
+		const alpha = data[i * info.channels + 3] ?? 0;
 		if (alpha > 8 && alpha < 247) count++;
 	}
 
@@ -315,6 +263,18 @@ test("Сообщает о конфликте имён вместо тихой п
 	assert.strictEqual(status, 1, "Конфликт должен давать ненулевой код выхода");
 	assert.match(stderr, /имя результата занято/);
 	assert.match(stdout, /пропущено 1/);
+});
+
+test("Битый файл не роняет остальные и виден в коде возврата", async () => {
+	await writePng("good.png");
+	await fs.writeFile(path.join(tmpDir, "broken.png"), "это не картинка");
+
+	const { status, stdout, stderr } = runCli(["-s", tmpDir]);
+
+	assert.strictEqual(status, 1);
+	assert.match(stderr, /Ошибка конвертации/);
+	assert.match(stdout, /успешно 1, с ошибкой 1 из 2/);
+	assert.strictEqual(await exists(path.join(tmpDir, "good.webp")), true);
 });
 
 test("--no-recursive не заходит в подпапки", async () => {
@@ -358,9 +318,30 @@ test("Сообщает об ошибке на несуществующем пу�
 	assert.match(stderr, /Путь не существует/);
 });
 
-test("Требует -s и не завершается успехом без него", async () => {
+test("Отказывается от неподдерживаемого формата", async () => {
+	const sourceFile = path.join(tmpDir, "notes.txt");
+	await fs.writeFile(sourceFile, "текст");
+
+	const { status, stderr } = runCli(["-s", sourceFile]);
+
+	assert.notStrictEqual(status, 0);
+	assert.match(stderr, /Неподдерживаемый формат/);
+});
+
+test("Требует -s и не завершается успехом без него", () => {
 	const { status, stderr } = runCli([]);
 
 	assert.notStrictEqual(status, 0, "Без -s код выхода должен быть ненулевым");
 	assert.match(stderr, /Укажите исходную папку или файл/);
+});
+
+test("--version печатает версию из package.json", async () => {
+	const pkg = JSON.parse(await fs.readFile("package.json", "utf8")) as {
+		version: string;
+	};
+
+	const { status, stdout } = runCli(["--version"]);
+
+	assert.strictEqual(status, 0);
+	assert.strictEqual(stdout.trim(), pkg.version);
 });

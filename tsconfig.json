@@ -1,0 +1,34 @@
+{
+	"compilerOptions": {
+		"target": "es2023",
+		"lib": ["es2023"],
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"types": ["node"],
+
+		"rootDir": "src",
+		"outDir": "dist",
+		"sourceMap": true,
+		"declaration": false,
+
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"exactOptionalPropertyTypes": true,
+
+		// verbatimModuleSyntax и erasableSyntaxOnly держат исходники такими,
+		// чтобы node мог запускать .ts напрямую своей вырезкой типов —
+		// без сборки, когда нужно быстро проверить правку.
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+
+		// Позволяет писать в импортах ./foo.ts: node так найдёт исходник,
+		// а tsc перепишет расширение на .js в сборке.
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}
