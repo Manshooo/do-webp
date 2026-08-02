@@ -1,7 +1,8 @@
 {
 	"name": "do-webp",
-	"version": "1.2.4",
+	"version": "1.3.0",
 	"description": "Convert images to WebP via npx do-webp",
+	"type": "module",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/manshooo/do-webp.git"
@@ -9,8 +10,16 @@
 	"bin": {
 		"do-webp": "bin/do-webp.js"
 	},
+	"files": [
+		"bin",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"node": ">=18.17.0"
+	},
 	"scripts": {
-		"test": "node --test test/**/*.test.js"
+		"test": "node --test \"test/**/*.test.js\""
 	},
 	"publishConfig": {
 		"registry": "https://registry.npmjs.org/"
@@ -23,6 +32,8 @@
 		"webp",
 		"converter",
 		"image",
+		"resize",
+		"svg",
 		"npx"
 	],
 	"license": "MIT"

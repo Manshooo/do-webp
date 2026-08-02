@@ -23,6 +23,19 @@ jobs:
       - name: Upgrade npm for OIDC support
         run: npm install -g npm@latest
 
+      # Тег v1.2.5 при version 1.2.4 в package.json npm отклоняет как повтор
+      # уже опубликованной версии. Лучше упасть здесь с понятным сообщением,
+      # чем разбираться потом в логе publish.
+      - name: Check tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Тег $GITHUB_REF_NAME не совпадает с версией в package.json ($pkg)."
+            echo "Обновите версию в package.json и пересоздайте тег."
+            exit 1
+          fi
+
       - run: npm ci
       - run: npm run build --if-present
       - run: npm test
