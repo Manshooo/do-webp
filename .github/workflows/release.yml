@@ -32,6 +32,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Нужны теги: шаг ниже проверяет, не выпущена ли уже эта версия.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
@@ -63,7 +66,20 @@ jobs:
           if [ "$target" = "none" ]; then
             # Версия уже проставлена в package.json руками — только ставим тег.
             tag="v$(node -p "require('./package.json').version")"
-            git tag -a "$tag" -m "$tag"
+
+            if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+              # Тег уже есть: либо поставлен руками, либо прошлый запуск упал
+              # после его создания. Продолжаем, только если он на этом же
+              # коммите, иначе выпустили бы под этим тегом другой код.
+              if [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
+                echo "Тег $tag уже существует и указывает на другой коммит."
+                echo "Удалите тег или выберите другую версию."
+                exit 1
+              fi
+              echo "Тег $tag уже стоит на этом коммите, переиспользуем."
+            else
+              git tag -a "$tag" -m "$tag"
+            fi
           else
             tag="$(npm version "$target" -m "v%s")"
           fi
