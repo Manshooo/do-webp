@@ -93,6 +93,20 @@ jobs:
             exit 1
           fi
 
+      # Всё, что нужно сверить с настройкой Trusted Publisher на npmjs.com,
+      # если публикация упадёт с ENEEDAUTH.
+      - name: Diagnose publish auth
+        run: |
+          echo "npm            $(npm --version)   (для OIDC нужен 11.5.1 или новее)"
+          echo "registry       $(npm config get registry)"
+          echo "repository     $GITHUB_REPOSITORY"
+          echo "workflow file  $(basename "${GITHUB_WORKFLOW_REF%%@*}")"
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            echo "OIDC           токен доступен, права id-token: write есть"
+          else
+            echo "OIDC           недоступен: нет прав id-token: write"
+          fi
+
       # Точка невозврата. Всё, что выше, можно перезапускать без последствий;
       # публикацию в npm отменить уже нельзя.
       #
