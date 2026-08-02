@@ -1,22 +1,24 @@
-# Единственный способ выпустить версию. Запускается руками из вкладки Actions,
-# сам поднимает версию в package.json, ставит тег и публикует в npm — поэтому
-# рассинхрон тега и package.json, из-за которого раньше падал деплой,
-# здесь невозможен в принципе.
+# Единственный способ выпустить версию. Запускается руками из вкладки Actions.
+#
+# Порядок шагов важен: версия сначала только записывается в package.json,
+# потом идёт публикация, и лишь после неё появляются коммит, тег и релиз.
+# Если npm откажет, в репозитории не останется ни поднятой версии, ни тега —
+# можно просто запустить workflow заново.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Какую часть версии поднять"
+        description: "Что сделать с версией"
         required: true
-        default: patch
+        default: none
         type: choice
         options:
+          - none # выпустить версию, которая уже записана в package.json
           - patch
           - minor
           - major
-          - none
       version:
         description: "Точная версия, например 2.0.0. Если заполнено, поле выше игнорируется"
         required: false
@@ -33,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Нужны теги: шаг ниже проверяет, не выпущена ли уже эта версия.
+          # Нужны теги: шаги ниже проверяют, не занят ли тег этой версии.
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -48,70 +50,74 @@ jobs:
       - run: npm ci
       - run: npm test
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
       # Значения из inputs передаём через env, а не подставляем в текст скрипта:
       # так их содержимое не может выполниться как команда.
-      - name: Bump version
-        id: bump
+      - name: Set version
+        id: version
         env:
           BUMP: ${{ inputs.bump }}
           EXACT: ${{ inputs.version }}
         run: |
           target="${EXACT:-$BUMP}"
 
-          if [ "$target" = "none" ]; then
-            # Версия уже проставлена в package.json руками — только ставим тег.
-            tag="v$(node -p "require('./package.json').version")"
-
-            if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
-              # Тег уже есть: либо поставлен руками, либо прошлый запуск упал
-              # после его создания. Продолжаем, только если он на этом же
-              # коммите, иначе выпустили бы под этим тегом другой код.
-              if [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
-                echo "Тег $tag уже существует и указывает на другой коммит."
-                echo "Удалите тег или выберите другую версию."
-                exit 1
-              fi
-              echo "Тег $tag уже стоит на этом коммите, переиспользуем."
-            else
-              git tag -a "$tag" -m "$tag"
-            fi
-          else
-            tag="$(npm version "$target" -m "v%s")"
+          if [ "$target" != "none" ]; then
+            npm version "$target" --no-git-tag-version
           fi
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Выпускаем $tag"
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Готовим версию $version"
+
+      - name: Check the tag is free
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
+            if [ "$(git rev-parse "$TAG^{commit}")" != "$(git rev-parse HEAD)" ]; then
+              echo "Тег $TAG уже существует и указывает на другой коммит."
+              echo "Удалите тег или выберите другую версию."
+              exit 1
+            fi
+            echo "Тег $TAG уже стоит на этом коммите, переиспользуем."
+          fi
 
       - name: Check version is not published yet
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           name="$(node -p "require('./package.json').name")"
-          version="$(node -p "require('./package.json').version")"
-          if npm view "$name@$version" version > /dev/null 2>&1; then
-            echo "Версия $version уже опубликована в npm."
-            echo "Выберите другой bump или укажите точную версию."
+          if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+            echo "Версия $VERSION уже опубликована в npm."
+            echo "Выберите bump patch/minor/major или укажите точную версию."
             exit 1
           fi
 
-      # Ветку и тег пушим по отдельности: при bump = none нового коммита нет,
-      # и полагаться на то, какие теги подхватит --follow-tags, не хочется.
-      - name: Push commit and tag
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          git push origin HEAD
-          git push origin "$TAG"
-
+      # Точка невозврата. Всё, что выше, можно перезапускать без последствий;
+      # публикацию в npm отменить уже нельзя.
+      #
       # Токен не нужен: авторизация идёт по OIDC через доверенного издателя,
       # настроенного на npmjs.com. npm сам приложит provenance к релизу.
       - name: Publish to npm
         run: npm publish
 
+      - name: Commit, tag and push
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json
+          git diff --cached --quiet || git commit -m "$TAG"
+
+          git rev-parse -q --verify "refs/tags/$TAG" > /dev/null \
+            || git tag -a "$TAG" -m "$TAG"
+
+          git push origin HEAD
+          git push origin "$TAG"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ steps.bump.outputs.tag }}" --generate-notes
+        run: gh release create "${{ steps.version.outputs.tag }}" --generate-notes
