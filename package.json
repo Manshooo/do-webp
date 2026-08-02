@@ -5,7 +5,7 @@
 	"type": "module",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/manshooo/do-webp.git"
+		"url": "git+https://github.com/Manshooo/do-webp.git"
 	},
 	"bin": {
 		"do-webp": "dist/cli.js"

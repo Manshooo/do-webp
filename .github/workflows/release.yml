@@ -93,6 +93,26 @@ jobs:
             exit 1
           fi
 
+      # npm сверяет repository.url с provenance посимвольно, вместе с регистром:
+      # "manshooo" вместо "Manshooo" валит публикацию с 422 уже после того,
+      # как подпись ушла в прозрачный лог. Ловим расхождение заранее.
+      - name: Check repository.url matches GitHub
+        run: |
+          expected="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+
+          actual="$(node -p "require('./package.json').repository?.url ?? ''")"
+          normalized="${actual#git+}"
+          normalized="${normalized%.git}"
+
+          if [ "$normalized" != "$expected" ]; then
+            echo "package.json repository.url:  $actual"
+            echo "фактический репозиторий:      $expected"
+            echo "Значения должны совпадать, включая регистр букв."
+            exit 1
+          fi
+
+          echo "repository.url совпадает с $expected"
+
       # Всё, что нужно сверить с настройкой Trusted Publisher на npmjs.com,
       # если публикация упадёт с ENEEDAUTH.
       - name: Diagnose publish auth
